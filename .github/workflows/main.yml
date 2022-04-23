@@ -1,0 +1,58 @@
+name: CI
+
+on: [push]
+
+jobs:
+  build-tvos:
+    name: tvOS
+
+    runs-on: macOS-latest
+
+    steps:
+    - uses: actions/checkout@v3.0.0
+        
+    - name: Get cache
+      uses: actions/cache@v3.0.0
+      id: cache
+      with:
+        # FIXME.  Podfile.lock needs to be cached, because a specs repo is altered after install.
+        path: |
+          Pods
+          PopcornTime.xcworkspace
+          Podfile.lock
+        key: ${{ hashFiles('Podfile.lock') }}
+
+    - name: Get pods
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        gem install cocoapods
+        pod repo update
+        pod update
+                
+    - name: Compile
+      run: |
+        xcodebuild archive \
+          -workspace PopcornTime.xcworkspace \
+          -scheme PopcornTime\ \(tvOS\) \
+          -configuration Release \
+          CODE_SIGN_IDENTITY= \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          VALID_ARCHS=arm64
+        
+    - name: Package
+      run: |
+        mkdir Payload
+        cp -r ~/Library/Developer/Xcode/Archives/*/*/Products/Applications/PopcornTime\ \(tvOS\).app Payload
+        wget https://github.com/sbingner/ldid/releases/download/v2.1.4+16.g5b8581c/ldid-osx.gz
+        gunzip ldid-osx.gz
+        chmod +x ldid-osx
+        ./ldid-osx -S Payload/PopcornTime\ \(tvOS\).app/PopcornTime\ \(tvOS\)
+        zip -r popcorn_time_tvos.ipa Payload
+        
+    - name: Upload
+      uses: actions/upload-artifact@v3.0.0
+      with:
+        name: 'popcorn_time_tvos'
+        path: |
+          popcorn_time_tvos.ipa
